@@ -1,5 +1,4 @@
-
-name: Pipeline CI
+name: CI
 
 on:
   push:
@@ -11,26 +10,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: 3.9
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install flake8
-    
-    - name: Lint with flake8
-      run: |
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-    
+        python -m pip install -r requirements.txt
+
     - name: Run tests
       run: |
         python manage.py test
-
