@@ -53,53 +53,60 @@ jobs:
           coverage_report.txt
           htmlcov/
 
-  build-and-push:
+   build-and-push:
     needs: test
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4   # updated
+      uses: actions/checkout@v4
     
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3   # updated
+      uses: docker/setup-buildx-action@v3
     
     - name: Login to DockerHub
       if: github.event_name != 'pull_request'
-      uses: docker/login-action@v3   # updated
+      uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
     
-    - name: Build and test Docker image
-      uses: docker/build-push-action@v5   # updated
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
       with:
         context: .
         push: false
         tags: the-button:${{ github.sha }}
         load: true
     
-    - name: Test Docker image
+    - name: Debug image
+      run: |
+        echo "Listing built images:"
+        docker images the-button:${{ github.sha }}
+    
+    - name: Test Docker container
       run: |
         docker run --name test-container -d -p 8000:8000 the-button:${{ github.sha }}
+        echo "Waiting for container to start..."
+        sleep 3
+        docker logs test-container || true
         for i in {1..10}; do
           if curl -s http://localhost:8000/ | grep -q "Ping"; then
-            echo "Application available!"
-            break
-          fi
-          if [ $i -eq 10 ]; then
-            echo "Application test timed out"
-            exit 1
+            echo "✅ Application available!"
+            exit 0
           fi
           echo "Retry $i – Waiting 1 sec..."
           sleep 1
         done
+        echo "❌ Application test failed"
+        docker logs test-container
+        exit 1
     
     - name: Tag and push Docker image
       if: github.event_name != 'pull_request'
       run: |
         SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
-        docker tag the-button:${{ github.sha }} ${{ secrets.DOCKER_USERNAME }}/the-button:${SHORT_SHA}
-        docker tag the-button:${{ github.sha }} ${{ secrets.DOCKER_USERNAME }}/the-button:latest
+        docker tag the-button:${{ github.sha}} ${{ secrets.DOCKER_USERNAME }}/the-button:${SHORT_SHA}
+        docker tag the-button:${{ github.sha}} ${{ secrets.DOCKER_USERNAME }}/the-button:latest
         docker push ${{ secrets.DOCKER_USERNAME }}/the-button:${SHORT_SHA}
         docker push ${{ secrets.DOCKER_USERNAME }}/the-button:latest
