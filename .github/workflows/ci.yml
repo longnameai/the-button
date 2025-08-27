@@ -12,12 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v3
     
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v4
       with:
-        python-version: '3.9'
+        python-version: 3.9
     
     - name: Install dependencies
       run: |
@@ -45,35 +45,31 @@ jobs:
           coverage_report.txt
           htmlcov/
 
-  build-and-push:
+      build-and-push:
     needs: test
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
-
+      uses: actions/checkout@v3
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
+      uses: docker/setup-buildx-action@v1
     - name: Login to DockerHub
       if: github.event_name != 'pull_request'
-      uses: docker/login-action@v3
+      uses: docker/login-action@v2
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
-
     - name: Build and test Docker image
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v3
       with:
         context: .
         push: false
         tags: the-button:${{ github.sha }}
         load: true
-
     - name: Test Docker image
       run: |
         docker run --name test-container -d -p 8000:8000 the-button:${{ github.sha }}
+        # Próbujemy połączyć się z aplikacją 10 razy, co sekundę
         for i in {1..10}; do
           if curl -s http://localhost:8000/ | grep -q "Ping"; then
             echo "Application available!"
@@ -86,15 +82,15 @@ jobs:
           echo "Retry $i – Waiting 1 sec..."
           sleep 1
         done
-
     - name: Tag and push Docker image
       if: github.event_name != 'pull_request'
       run: |
-        SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-        USERNAME=$(echo "${{ secrets.DOCKER_USERNAME }}" | tr '[:upper:]' '[:lower:]')
+        # Użyj tylko skróconego SHA jako tagu
+        SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+        # Taguj obraz
+        docker tag the-button:${{ github.sha }} ${{ secrets.DOCKER_USERNAME }}/the-button:${SHORT_SHA}
+        docker tag the-button:${{ github.sha }} ${{ secrets.DOCKER_USERNAME }}/the-button:latest
+        # Publikuj obraz
+        docker push ${{ secrets.DOCKER_USERNAME }}/the-button:${SHORT_SHA}
+        docker push ${{ secrets.DOCKER_USERNAME }}/the-button:latest
         
-        docker tag the-button:${{ github.sha }} $USERNAME/the-button:${SHORT_SHA}
-        docker tag the-button:${{ github.sha }} $USERNAME/the-button:latest
-        
-        docker push $USERNAME/the-button:${SHORT_SHA}
-        docker push $USERNAME/the-button:latest
