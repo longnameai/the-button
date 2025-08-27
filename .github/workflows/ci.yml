@@ -45,7 +45,7 @@ jobs:
           coverage_report.txt
           htmlcov/
 
-   build-and-push:
+  build-and-push:
     needs: test
     runs-on: ubuntu-latest
     steps:
@@ -69,7 +69,6 @@ jobs:
     - name: Test Docker image
       run: |
         docker run --name test-container -d -p 8000:8000 the-button:${{ github.sha }}
-        # Próbujemy połączyć się z aplikacją 10 razy, co sekundę
         for i in {1..10}; do
           if curl -s http://localhost:8000/ | grep -q "Ping"; then
             echo "Application available!"
@@ -85,11 +84,8 @@ jobs:
     - name: Tag and push Docker image
       if: github.event_name != 'pull_request'
       run: |
-        # Użyj tylko skróconego SHA jako tagu
         SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
-        # Taguj obraz
         docker tag the-button:${{ github.sha }} ${{ secrets.DOCKER_USERNAME }}/the-button:${SHORT_SHA}
         docker tag the-button:${{ github.sha }} ${{ secrets.DOCKER_USERNAME }}/the-button:latest
-        # Publikuj obraz
         docker push ${{ secrets.DOCKER_USERNAME }}/the-button:${SHORT_SHA}
         docker push ${{ secrets.DOCKER_USERNAME }}/the-button:latest
