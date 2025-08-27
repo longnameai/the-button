@@ -90,8 +90,11 @@ jobs:
     - name: Tag and push Docker image
       if: github.event_name != 'pull_request'
       run: |
-        SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
-        docker tag the-button:${{ github.sha }} ${{ secrets.DOCKER_USERNAME }}/the-button:${SHORT_SHA}
-        docker tag the-button:${{ github.sha }} ${{ secrets.DOCKER_USERNAME }}/the-button:latest
-        docker push ${{ secrets.DOCKER_USERNAME }}/the-button:${SHORT_SHA}
-        docker push ${{ secrets.DOCKER_USERNAME }}/the-button:latest
+        SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+        USERNAME=$(echo "${{ secrets.DOCKER_USERNAME }}" | tr '[:upper:]' '[:lower:]')
+        
+        docker tag the-button:${{ github.sha }} $USERNAME/the-button:${SHORT_SHA}
+        docker tag the-button:${{ github.sha }} $USERNAME/the-button:latest
+        
+        docker push $USERNAME/the-button:${SHORT_SHA}
+        docker push $USERNAME/the-button:latest
