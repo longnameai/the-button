@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4   # updated
+    - uses: actions/checkout@v4
     
     - name: Set up Python
-      uses: actions/setup-python@v5   # updated
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
     
@@ -45,7 +45,7 @@ jobs:
         coverage html
     
     - name: Upload test reports
-      uses: actions/upload-artifact@v4   # updated
+      uses: actions/upload-artifact@v4
       with:
         name: test-reports
         path: |
@@ -84,15 +84,33 @@ jobs:
         echo "Listing built images:"
         docker images the-button:${{ github.sha }}
     
-    - name: Run Trivy vulnerability scanner
+    # Blocking scan - only CRITICAL issues stop pipeline
+    - name: Run Trivy vulnerability scanner (blocking)
       uses: aquasecurity/trivy-action@master
       with:
         image-ref: 'the-button:${{ github.sha }}'
         format: 'table'
+        exit-code: '1'  # Block pipeline on CRITICAL issues
+        ignore-unfixed: true
+        severity: 'CRITICAL'
+        timeout: '5m'
+
+    # SARIF scan for GitHub Security Dashboard
+    - name: Generate Trivy SARIF report
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'the-button:${{ github.sha }}'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
         exit-code: '0'
         ignore-unfixed: true
-        severity: 'CRITICAL,HIGH'
-        timeout: '5m'
+        severity: 'CRITICAL,HIGH,MEDIUM'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
     
     - name: Test Docker container
       run: |
