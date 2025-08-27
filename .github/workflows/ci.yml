@@ -53,7 +53,7 @@ jobs:
           coverage_report.txt
           htmlcov/
 
-   build-and-push:
+  build-and-push:   # <-- aligned correctly now
     needs: test
     runs-on: ubuntu-latest
 
