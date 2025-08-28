@@ -1,4 +1,4 @@
-name: Python CI
+name: Python CI/CD
 
 on:
   push:
@@ -10,134 +10,101 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.9'
-    
-    - name: Cache pip packages
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install flake8 coverage
-    
-    - name: Lint with flake8
-      run: |
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics > flake8_report.txt
-    
-    - name: Run tests with coverage
-      run: |
-        coverage run --source=. manage.py test
-        coverage report -m > coverage_report.txt
-        coverage html
-    
-    - name: Upload test reports
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-reports
-        path: |
-          flake8_report.txt
-          coverage_report.txt
-          htmlcov/
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install flake8 coverage
+      - name: Lint with flake8
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics > flake8_report.txt
+      - name: Run tests with coverage
+        run: |
+          coverage run --source=. manage.py test
+          coverage report -m > coverage_report.txt
+          coverage html
+      - name: Upload test reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            flake8_report.txt
+            coverage_report.txt
+            htmlcov/
 
   build-and-push:
     needs: test
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-    
-    - name: Login to DockerHub
-      if: github.event_name != 'pull_request'
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-    
-    - name: Build Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        push: false
-        tags: the-button:${{ github.sha }}
-        load: true
-    
-    - name: Debug image
-      run: |
-        echo "Listing built images:"
-        docker images the-button:${{ github.sha }}
-    
-    # Blocking scan - only CRITICAL issues stop pipeline
-    - name: Run Trivy vulnerability scanner (blocking)
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: 'the-button:${{ github.sha }}'
-        format: 'table'
-        exit-code: '1'
-        ignore-unfixed: true
-        severity: 'CRITICAL'
-        timeout: '5m'
-
-    # SARIF scan for GitHub Security Dashboard
-    - name: Generate Trivy SARIF report
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: 'the-button:${{ github.sha }}'
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-        exit-code: '0'
-        ignore-unfixed: true
-        severity: 'CRITICAL,HIGH,MEDIUM'
-
-    - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: 'trivy-results.sarif'
-    
-    - name: Test Docker container
-      run: |
-        docker run --name test-container -d -p 8000:8000 the-button:${{ github.sha }}
-        echo "Waiting for container to start..."
-        sleep 3
-        docker logs test-container || true
-        for i in {1..10}; do
-          if curl -s http://localhost:8000/ | grep -q "Ping"; then
-            echo "✅ Application available!"
-            exit 0
-          fi
-          echo "Retry $i – Waiting 1 sec..."
-          sleep 1
-        done
-        echo "❌ Application test failed"
-        docker logs test-container
-        exit 1
-    
-    - name: Tag and push Docker image
-      if: github.event_name != 'pull_request'
-      run: |
-        SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
-        docker tag the-button:${{ github.sha}} ${{ secrets.DOCKER_USERNAME }}/the-button:${SHORT_SHA}
-        docker tag the-button:${{ github.sha}} ${{ secrets.DOCKER_USERNAME }}/the-button:latest
-        docker push ${{ secrets.DOCKER_USERNAME }}/the-button:${SHORT_SHA}
-        docker push ${{ secrets.DOCKER_USERNAME }}/the-button:latest
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to DockerHub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/the-button:${{ github.sha }}
+      - name: Debug image
+        run: docker images ${{ secrets.DOCKER_USERNAME }}/the-button:${{ github.sha }}
+      - name: Run Trivy vulnerability scanner (blocking)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ secrets.DOCKER_USERNAME }}/the-button:${{ github.sha }}'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL'
+          timeout: '5m'
+      - name: Run Trivy vulnerability scanner (JSON report)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ secrets.DOCKER_USERNAME }}/the-button:${{ github.sha }}'
+          format: 'json'
+          output: 'trivy-results.json'
+          exit-code: '0'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH,MEDIUM'
+      - name: Upload Trivy scan results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-results
+          path: trivy-results.json
+      - name: Generate Trivy SARIF report
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ secrets.DOCKER_USERNAME }}/the-button:${{ github.sha }}'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          exit-code: '0'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH,MEDIUM'
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
 
   deploy-to-dev:
     needs: build-and-push
@@ -156,19 +123,78 @@ jobs:
           sleep 5
           echo "Deployment to development environment completed!"
 
-  deploy-to-production:
-    needs: deploy-to-dev
+  release:
     runs-on: ubuntu-latest
-    environment: production
+    needs: deploy-to-dev
+    outputs:
+      tag: ${{ steps.versioning.outputs.new_tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      - name: Show environment variables
+        with:
+          fetch-depth: 0
+
+      - name: Semantic versioning
+        id: versioning
+        uses: mathieudutour/github-tag-action@v6.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          release_branches: master
+          default_bump: ${{ github.event.inputs.version_type || 'patch' }}
+
+      - name: Create Release
+        if: steps.versioning.outputs.new_tag
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.versioning.outputs.new_tag }}
+          release_name: Release ${{ steps.versioning.outputs.new_tag }}
+          body: ${{ steps.versioning.outputs.changelog }}
+          draft: false
+          prerelease: false
+
+      - name: Login to DockerHub
+        if: steps.versioning.outputs.new_tag
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Tag and push Docker image with version
+        if: steps.versioning.outputs.new_tag
         run: |
-          echo "Deploying to ${{ vars.ENVIRONMENT_NAME }} environment"
-          echo "Using token: ${{ secrets.DEPLOY_TOKEN != '' && '***' || 'Not set' }}"
-      - name: Mock deployment
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          docker pull ${{ secrets.DOCKER_USERNAME }}/the-button:${{ github.sha }}
+          docker tag ${{ secrets.DOCKER_USERNAME }}/the-button:${{ github.sha }} ${{ secrets.DOCKER_USERNAME }}/the-button:${{ steps.versioning.outputs.new_tag }}
+          docker push ${{ secrets.DOCKER_USERNAME }}/the-button:${{ steps.versioning.outputs.new_tag }}
+          docker tag ${{ secrets.DOCKER_USERNAME }}/the-button:${{ github.sha }} ${{ secrets.DOCKER_USERNAME }}/the-button:latest
+          docker push ${{ secrets.DOCKER_USERNAME }}/the-button:latest
+          echo "Docker image tagged as ${{ steps.versioning.outputs.new_tag }} and pushed to Docker Hub"
+
+  deploy-to-production:
+    needs: release
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install SSH Key
         run: |
-          echo "Starting deployment to production environment..."
-          sleep 10
-          echo "Deployment to production environment completed!"
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+      - name: Adding Known Hosts
+        run: |
+          ssh-keyscan ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+      - name: Prepare deployment
+        run: chmod +x ./.github/scripts/deploy.sh
+      - name: Deploy to EC2
+        env:
+          IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/the-button
+          TAG: ${{ needs.release.outputs.tag }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          ENV_NAME: production
+        run: |
+          echo "Starting deployment to EC2 with tag $TAG..."
+          ./.github/scripts/deploy.sh $IMAGE_NAME $TAG $EC2_HOST $EC2_USER $ENV_NAME
