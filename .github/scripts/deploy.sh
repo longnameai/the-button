@@ -1,19 +1,29 @@
-#!/bin/bash
-set -e
+name: Deploy to EC2
 
-IMAGE_NAME=$1
-TAG=$2
-EC2_HOST=$3
-EC2_USER=$4
-ENV_NAME=$5
+# Trigger deployment when you push to master
+on:
+  push:
+    branches:
+      - master
 
-echo "Deploying $IMAGE_NAME:$TAG to $ENV_NAME on $EC2_HOST..."
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
 
-ssh -i ~/.ssh/deploy_key $EC2_USER@$EC2_HOST << EOF
-  docker pull $IMAGE_NAME:$TAG
-  docker stop the-button || true
-  docker rm the-button || true
-  docker run -d --name the-button -p 80:80 $IMAGE_NAME:$TAG
-EOF
+    steps:
+      # 1️⃣ Checkout your repository
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-echo "Deployment finished!"
+      # 2️⃣ Setup SSH agent with your private key stored in GitHub secrets
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      # 3️⃣ Deploy to your EC2 server
+      - name: Deploy to EC2
+        run: |
+          echo "Starting deployment to EC2..."
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            "docker pull your-docker-username/the-button:latest && docker-compose -f /path/to/docker-compose.yml up -d"
