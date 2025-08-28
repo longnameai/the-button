@@ -7,66 +7,21 @@ on:
   workflow_dispatch:
     inputs:
       version_type:
-        description: 'Version bump type (major, minor, patch)'
+        description: 'Type of version bump (major, minor, patch)'
         required: false
-        default: 'patch'
+        default: patch
 
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
-    outputs:
-      image_sha: ${{ steps.build.outputs.sha }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Build and push Docker image
-        id: build
-        run: |
-          IMAGE_NAME=${{ secrets.DOCKER_USERNAME }}/the-button
-          docker build -t $IMAGE_NAME:${GITHUB_SHA} .
-          docker push $IMAGE_NAME:${GITHUB_SHA}
-          echo "sha=${GITHUB_SHA}" >> $GITHUB_OUTPUT
-
-  deploy-to-dev:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    environment: development
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Show environment variables
-        run: |
-          echo "Deploying to ${{ vars.ENVIRONMENT_NAME }} environment"
-          echo "Using token: ${{ secrets.DEPLOY_TOKEN != '' && '***' || 'Not set' }}"
-
-      - name: Mock deployment
-        run: |
-          echo "Starting deployment to development environment..."
-          sleep 5
-          echo "Deployment to development environment completed!"
-
   release:
-    needs: deploy-to-dev
     runs-on: ubuntu-latest
-    outputs:
+    outputs: 
       tag: ${{ steps.versioning.outputs.new_tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
-
+          
       - name: Semantic versioning
         id: versioning
         uses: mathieudutour/github-tag-action@v6.1
@@ -74,7 +29,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           release_branches: master
           default_bump: ${{ github.event.inputs.version_type || 'patch' }}
-
+          
       - name: Create Release
         if: steps.versioning.outputs.new_tag
         uses: actions/create-release@v1
@@ -86,35 +41,24 @@ jobs:
           body: ${{ steps.versioning.outputs.changelog }}
           draft: false
           prerelease: false
-
+          
       - name: Login to DockerHub
         if: steps.versioning.outputs.new_tag
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Pull, Tag, and Push Docker Image
+          
+      - name: Tag and push Docker image with version
         if: steps.versioning.outputs.new_tag
         run: |
-          IMAGE_NAME=${{ secrets.DOCKER_USERNAME }}/the-button
-          FULL_SHA=${{ needs.build-and-push.outputs.image_sha }}
-          TAG=${{ steps.versioning.outputs.new_tag }}
-
-          echo "Pulling image $IMAGE_NAME:$FULL_SHA"
-          docker pull $IMAGE_NAME:$FULL_SHA
-
-          echo "Tagging $IMAGE_NAME:$FULL_SHA as $IMAGE_NAME:$TAG"
-          docker tag $IMAGE_NAME:$FULL_SHA $IMAGE_NAME:$TAG
-
-          echo "Pushing $IMAGE_NAME:$TAG"
-          docker push $IMAGE_NAME:$TAG
-
-          echo "Updating latest tag"
-          docker tag $IMAGE_NAME:$FULL_SHA $IMAGE_NAME:latest
-          docker push $IMAGE_NAME:latest
-
-          echo "Docker image tagged as $TAG and pushed"
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          docker pull ${{ secrets.DOCKER_USERNAME }}/the-button:${SHORT_SHA}
+          docker tag ${{ secrets.DOCKER_USERNAME }}/the-button:${SHORT_SHA} ${{ secrets.DOCKER_USERNAME }}/the-button:${{ steps.versioning.outputs.new_tag }}
+          docker push ${{ secrets.DOCKER_USERNAME }}/the-button:${{ steps.versioning.outputs.new_tag }}
+          docker tag ${{ secrets.DOCKER_USERNAME }}/the-button:${SHORT_SHA} ${{ secrets.DOCKER_USERNAME }}/the-button:latest
+          docker push ${{ secrets.DOCKER_USERNAME }}/the-button:latest
+          echo "Docker image tagged and pushed: ${{ steps.versioning.outputs.new_tag }}"
 
   deploy-to-production:
     needs: release
@@ -148,37 +92,37 @@ jobs:
           echo "Starting deployment of version $TAG to EC2..."
           ./.github/scripts/deploy.sh $IMAGE_NAME $TAG $EC2_HOST $EC2_USER $ENV_NAME
 
-          smoke-tests:
-  needs: deploy-to-production
-  runs-on: ubuntu-latest
-  environment: production
-  steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-      
-    - name: Prepare test script
-      run: |
-        chmod +x ./.github/scripts/smoke-tests.sh
-        
-    - name: Run smoke tests
-      env:
-        APP_URL: http://${{ secrets.EC2_HOST }}:8000
-      run: |
-        echo "Running smoke tests..."
-        ./.github/scripts/smoke-tests.sh $APP_URL
-        
-    - name: Send notification on success
-      if: success()
-      run: |
-        echo "Deployment and tests completed successfully!"
-        curl -X POST -H "Content-Type: application/json" \
-          -d '{"status":"success","message":"Deployment and tests completed successfully!"}' \
-          ${{ secrets.WEBHOOK_URL }}
-        
-    - name: Send alert on failure
-      if: failure()
-      run: |
-        echo "Smoke tests failed! Check the logs."
-        curl -X POST -H "Content-Type: application/json" \
-          -d '{"status":"failure","message":"Smoke tests failed! Check the logs."}' \
-          ${{ secrets.WEBHOOK_URL }}
+  smoke-tests:
+    needs: deploy-to-production
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Prepare test script
+        run: |
+          chmod +x ./.github/scripts/smoke-tests.sh
+
+      - name: Run smoke tests
+        env:
+          APP_URL: http://${{ secrets.EC2_HOST }}:8000
+        run: |
+          echo "Running smoke tests..."
+          ./.github/scripts/smoke-tests.sh $APP_URL
+
+      - name: Send notification on success
+        if: success()
+        run: |
+          echo "Deployment and tests completed successfully!"
+          curl -X POST -H "Content-Type: application/json" \
+            -d '{"status":"success","message":"Deployment and tests completed successfully!"}' \
+            ${{ secrets.WEBHOOK_URL }}
+
+      - name: Send alert on failure
+        if: failure()
+        run: |
+          echo "Smoke tests failed! Check the logs."
+          curl -X POST -H "Content-Type: application/json" \
+            -d '{"status":"failure","message":"Smoke tests failed! Check the logs."}' \
+            ${{ secrets.WEBHOOK_URL }}
